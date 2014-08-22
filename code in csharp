@@ -1,0 +1,177 @@
+
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Windows.Forms;
+using System.IO.Ports;
+using System.Threading;
+using System.Data.Sql;
+using System.Data.SqlClient;
+
+namespace SimpleSerial
+{
+    public partial class Form1 : Form
+    {
+        // Add this variable 
+
+       
+        public Form1()
+        {
+            InitializeComponent();
+        }
+        
+        private Boolean receiving;
+        private SerialPort comport;
+        delegate void Display(Byte[] buffer);
+
+        private Thread t;
+
+        private void DisplayText(Byte[] buffer)
+        {
+                  textBox6.Text = System.Text.Encoding.ASCII.GetString(buffer);
+                  
+                  string[] seperated = textBox6.Text.Split(',');
+                  label9.Text = seperated.Length.ToString();
+                  try
+                  {
+                      if (seperated.Length >= 4)
+                      {
+                          string address = seperated[0];
+                          string temp = seperated[1];
+                          string hum = seperated[2];
+                          string light = seperated[3];
+                          textBox1.Text = address;
+                          textBox2.Text = temp;
+                          textBox3.Text = hum;
+                          textBox4.Text = light;
+                          textBox5.Text = DateTime.Now.ToString();
+                          SaveTemperatureToDB(seperated);
+                      }
+                  }
+                  catch (Exception e)
+                  {
+                      MessageBox.Show("Something wrong");
+                  }
+        } 
+
+
+
+
+
+        private void buttonStart_Click(object sender, EventArgs e)
+        {
+            
+            comport = new SerialPort("COM4", 115200, Parity.None, 8, StopBits.One);
+            
+            comport.Open();
+            if (comport.IsOpen)
+            {
+                buttonStart.Enabled = false;
+                buttonStop.Enabled = true;
+                receiving = true;
+                t = new Thread(DoReceive);
+                t.IsBackground = true;
+                t.Start(); 
+
+            }
+        }
+
+        private void buttonStop_Click(object sender, EventArgs e)
+        {
+            receiving = false;
+            if (comport.IsOpen)
+            {
+                comport.Close();
+                buttonStart.Enabled = true;
+                buttonStop.Enabled = false;
+               
+            }   
+
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            receiving = false;
+            if (comport.IsOpen) comport.Close();
+           
+        }
+
+
+        private void DoReceive()
+        {
+            Byte[] buffer = new Byte[1024];
+            while (receiving)
+            {
+               if (comport.BytesToRead > 0)
+                {
+
+                    Int32 length = comport.Read(buffer, 0, buffer.Length);
+
+                    Array.Resize(ref buffer, length);
+
+                    Display d = new Display(DisplayText);
+
+                    this.Invoke(d, new Object[] { buffer });
+                    Array.Resize(ref buffer, 1024); 
+
+             
+                }
+
+
+                Thread.Sleep(16);
+
+
+            }
+
+
+        } 
+
+
+  
+
+
+      
+         private void SaveTemperatureToDB(string[] separated)
+        {
+            string connStr;
+            SqlConnection conn = new SqlConnection();
+            connStr = "Data Source=.\\SQLEXPRESS;AttachDbFilename=C:\\Users\\sunlu\\Documents\\monitor.mdf;Integrated Security=True;Connect Timeout=30;User Instance=True";
+            conn.ConnectionString = connStr;
+                                  
+            {
+                SqlCommand CmdSql = new SqlCommand("INSERT INTO monitordata (address, temp, hum, light, time) VALUES (@address, @temp, @hum,@light, @time)", conn);
+                
+                conn.Open();
+
+                CmdSql.Parameters.AddWithValue("@address", separated[0]);
+                CmdSql.Parameters.AddWithValue("@temp", separated[1]);
+                CmdSql.Parameters.AddWithValue("@hum", separated[2]);
+                CmdSql.Parameters.AddWithValue("@light", separated[3]);
+                CmdSql.Parameters.AddWithValue("@time", textBox5.Text);
+                CmdSql.ExecuteNonQuery();
+                using (SqlDataAdapter a = new SqlDataAdapter("SELECT * FROM monitordata", conn))
+                {
+                    DataTable ta = new DataTable();
+                    a.Fill(ta);
+                    dataGridView1.DataSource = ta;
+                }
+
+
+                conn.Close();
+            }
+
+         
+        
+        }
+
+         private void Form1_Load(object sender, EventArgs e)
+         {
+
+         }
+
+    }
+}
